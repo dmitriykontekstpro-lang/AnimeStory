@@ -4,10 +4,13 @@ const NOVITA_TXT2IMG_URL = 'https://api.novita.ai/v3/text-to-image';
 
 // A list of high-quality anime/manga models to try in sequence.
 const NOVITA_IMAGE_MODELS_TO_TRY = [
-    'meinamix_meina-v11.safetensors',
-    'anything-v5-PrtRE.safetensors',
-    'counterfeit-v3.0.safetensors',
-    'dreamshaper-8.safetensors',
+    'ponydiffusionv6xl_v615.safetensors',
+    'realisticVisionV51_v51VAE.safetensors',
+    'chilloutmix_NiPrunedFp32Fix.safetensors',
+    'dreamshaper_8.safetensors',
+    'meinamix_v11.safetensors',
+    'AnythingV5_v5PrtRE.safetensors',
+    'AbsoluteReality_v181.safetensors',
 ];
 
 export async function generateMangaImage(sceneDescription: string): Promise<string> {
@@ -60,4 +63,15 @@ export async function generateMangaImage(sceneDescription: string): Promise<stri
                     // Continue to the next model
                 }
             } else {
-                 
+                const errorBody = await response.json().catch(() => ({ message: response.statusText }));
+                console.error(`Ошибка от Novita AI с моделью ${model_name}: ${response.status} - ${errorBody.message || 'Неизвестная ошибка'}`);
+                // Continue to the next model, as this one failed.
+            }
+        } catch (error: any) {
+            console.error(`Сетевая ошибка или проблема с запросом для модели ${model_name}:`, error);
+            // Continue to the next model on network errors
+        }
+    }
+
+    throw new Error("Не удалось сгенерировать изображение. Ни одна из моделей Novita AI не ответила успешно.");
+}
