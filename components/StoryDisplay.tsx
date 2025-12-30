@@ -1,86 +1,127 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { AIProvider } from '../types';
+import { fetchStory } from '../services/supabaseClient.ts';
 
 interface StoryDisplayProps {
-  story: string;
+  storyId: number;
   provider: AIProvider | null;
 }
 
-const parseStory = (text: string) => {
-    // Use split with a capturing group to keep the delimiters.
-    // This ensures all parts of the string are processed.
-    const delimiterRegex = /((?:Страница|Page)\s*\d+[,.\s]+(?:Блок|Block)\s*\d+)/gi;
-    const parts = text.split(delimiterRegex);
+interface StoryBlock {
+    block: string;
+    content: string;
+    dialogue?: string;
+}
 
-    // If no markers are found, or the text is simple, return it as a single block.
-    if (parts.length <= 1) {
-        return [{ page: 'История', blocks: [{ block: 'Полный текст', content: text.trim() }] }];
+interface StoryPage {
+    page: string;
+    blocks: StoryBlock[];
+}
+
+const formatStoryFromData = (data: any): StoryPage[] => {
+    if (!data) return [];
+    
+    const pagesMap = new Map<string, StoryPage>();
+
+    // First pass for content blocks
+    for (const key in data) {
+        const match = key.match(/^p(\d+)_b(\d+)$/);
+        if (match) {
+            const pageNum = match[1];
+            const blockNum = parseInt(match[2]);
+            const content = data[key];
+
+            if (content) {
+                if (!pagesMap.has(pageNum)) {
+                    pagesMap.set(pageNum, {
+                        page: `Страница ${pageNum}`,
+                        blocks: []
+                    });
+                }
+                const page = pagesMap.get(pageNum)!;
+                // Ensure the block object exists
+                if (!page.blocks[blockNum - 1]) {
+                    page.blocks[blockNum - 1] = { block: `Блок ${blockNum}`, content: '' };
+                }
+                page.blocks[blockNum - 1].content = content;
+            }
+        }
     }
 
-    const pagesMap = new Map<string, { page: string; blocks: { block: string; content: string }[] }>();
+    // Second pass for dialogue
+    for (const key in data) {
+        const match = key.match(/^p(\d+)_b(\d+)_dialogue$/);
+        if (match) {
+            const pageNum = match[1];
+            const blockNum = parseInt(match[2]);
+            const dialogueContent = data[key];
+            const page = pagesMap.get(pageNum);
 
-    // Handle any text that might appear before the first marker.
-    const initialContent = parts[0].trim();
-    if (initialContent) {
-        pagesMap.set("0", { // Use "0" as a key for sorting prologue first
-            page: `Пролог`,
-            blocks: [{
-                block: 'Вступление',
-                content: initialContent
-            }]
-        });
+            if (page && page.blocks[blockNum - 1] && dialogueContent) {
+                page.blocks[blockNum - 1].dialogue = dialogueContent;
+            }
+        }
     }
     
-    // Process the text in pairs of [marker, content].
-    for (let i = 1; i < parts.length; i += 2) {
-        const marker = parts[i];
-        let content = (parts[i + 1] || '').trim();
-
-        if (!marker || !content) {
-            continue;
-        }
-
-        // Extract page and block numbers from the marker.
-        const markerMatch = marker.match(/(?:Страница|Page)\s*(\d+)[,.\s]+(?:Блок|Block)\s*(\d+)/i);
-        if (!markerMatch) {
-            continue;
-        }
-
-        const pageNum = markerMatch[1];
-        const blockNum = markerMatch[2];
-
-        if (!pagesMap.has(pageNum)) {
-            pagesMap.set(pageNum, {
-                page: `Страница ${pageNum}`,
-                blocks: []
-            });
-        }
-
-        pagesMap.get(pageNum)!.blocks.push({
-            block: `Блок ${blockNum}`,
-            content: content
-        });
-    }
-
-    // Convert map to array and sort numerically by page number, keeping prologue first.
-    return Array.from(pagesMap.values()).sort((a, b) => {
-        if (a.page.startsWith('Пролог')) return -1;
-        if (b.page.startsWith('Пролог')) return 1;
-        const pageNumA = parseInt(a.page.split(' ')[1]);
-        const pageNumB = parseInt(b.page.split(' ')[1]);
-        return pageNumA - pageNumB;
+    // Clean up any empty slots and sort
+    pagesMap.forEach(page => {
+        page.blocks = page.blocks.filter(Boolean);
     });
+
+    return Array.from(pagesMap.entries())
+        .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
+        .map(entry => entry[1]);
 };
 
 
-export const StoryDisplay: React.FC<StoryDisplayProps> = ({ story, provider }) => {
-  const parsedStory = parseStory(story);
+export const StoryDisplay: React.FC<StoryDisplayProps> = ({ storyId, provider }) => {
+  const [storyData, setStoryData] = useState<any | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!storyId) return;
+
+    const loadStory = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const data = await fetchStory(storyId);
+        setStoryData(data);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadStory();
+  }, [storyId]);
+  
+  if (isLoading) {
+    return (
+        <div className="mt-8 w-full text-center text-slate-400">
+            <p>Загрузка истории из базы данных...</p>
+        </div>
+    );
+  }
+
+  if (error) {
+      return (
+          <div className="mt-8 w-full p-4 bg-red-500/20 border border-red-500/50 text-red-300 rounded-lg">
+              <p className="font-bold">Ошибка загрузки:</p>
+              <p>{error}</p>
+          </div>
+      );
+  }
+
+  const parsedStory = formatStoryFromData(storyData);
 
   return (
     <div className="mt-8 w-full bg-slate-800/50 p-6 rounded-2xl shadow-2xl border border-slate-700 animate-fade-in">
       <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-600">
         <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500">
-          Финальный Результат: Ваша История
+          Финальный Результат: Ваша История #{storyId}
         </h2>
         {provider && (
           <span className="px-3 py-1 text-xs font-semibold rounded-full bg-slate-700 text-slate-300">
@@ -97,6 +138,11 @@ export const StoryDisplay: React.FC<StoryDisplayProps> = ({ story, provider }) =
               <div key={blockIndex} className="mb-4 last:mb-0">
                 <h4 className="font-bold text-slate-400">{block.block}</h4>
                 <p className="whitespace-pre-wrap">{block.content}</p>
+                {block.dialogue && (
+                   <blockquote className="mt-3 pl-4 border-l-2 border-pink-500/50 italic text-slate-400">
+                     <pre className="whitespace-pre-wrap font-sans">{block.dialogue}</pre>
+                   </blockquote>
+                )}
               </div>
             ))}
           </div>

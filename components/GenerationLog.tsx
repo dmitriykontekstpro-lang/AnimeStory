@@ -53,18 +53,21 @@ const AccordionSection: React.FC<AccordionSectionProps> = ({ title, systemPrompt
 interface GenerationLogProps {
   plot: string | null;
   detailedStory: string | null;
+  generatedDialogue: string | null;
   systemPrompts: {
     plot?: string;
     story?: string;
+    dialogue?: string;
   };
 }
 
 export const GenerationLog: React.FC<GenerationLogProps> = ({
   plot,
   detailedStory,
+  generatedDialogue,
   systemPrompts
 }) => {
-  const hasContent = plot || detailedStory || Object.keys(systemPrompts).length > 0;
+  const hasContent = plot || detailedStory || generatedDialogue || Object.keys(systemPrompts).length > 0;
 
   if (!hasContent) {
     return null;
@@ -85,6 +88,11 @@ export const GenerationLog: React.FC<GenerationLogProps> = ({
           title="Шаг 2: Написание детальной истории"
           systemPrompt={systemPrompts.story}
           content={detailedStory}
+        />
+        <AccordionSection 
+          title="Шаг 3: Генерация реплик персонажей"
+          systemPrompt={systemPrompts.dialogue}
+          content={generatedDialogue}
         />
       </div>
     </div>
